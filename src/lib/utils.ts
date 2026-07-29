@@ -96,6 +96,7 @@ export function truncate(text: string, length: number): string {
 
 export const SITE_CONFIG = {
   name: "Suit Society",
+  instagram: "https://www.instagram.com/suitsociety_official/",
   email: "suitsocietyofficial@gmail.com",
   phone: "07974100362",
   phones: ["07974100362", "8120650803"],

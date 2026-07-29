@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Instagram, Facebook, Mail, Phone, MapPin, Lock } from "lucide-react";
+import { Instagram, Mail, Phone, MapPin, Lock } from "lucide-react";
 import { SITE_CONFIG } from "@/lib/utils";
 
 export function Footer() {
@@ -15,8 +15,15 @@ export function Footer() {
               Premium luxury fashion for the modern women. Crafted with excellence in Raigarh, Chhattisgarh.
             </p>
             <div className="flex gap-4 mt-6">
-              <a href="#" className="hover:text-gold transition-colors" aria-label="Instagram"><Instagram className="w-5 h-5" /></a>
-              <a href="#" className="hover:text-gold transition-colors" aria-label="Facebook"><Facebook className="w-5 h-5" /></a>
+              <a
+                href={SITE_CONFIG.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-gold transition-colors"
+                aria-label="Instagram"
+              >
+                <Instagram className="w-5 h-5" />
+              </a>
             </div>
           </div>
 
