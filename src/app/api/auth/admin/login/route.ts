@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import { createAdminToken } from "@/lib/auth";
 import { DEFAULT_ADMIN } from "@/lib/constants";
+import { ensureDatabaseReady } from "@/lib/init-db";
 
 async function ensureDefaultAdmin(supabase: ReturnType<typeof createServiceClient>) {
   const passwordHash = await bcrypt.hash(DEFAULT_ADMIN.password, 12);
@@ -42,6 +43,14 @@ export async function POST(request: Request) {
 
     if (!username || !password) {
       return Response.json({ error: "Username and password required" }, { status: 400 });
+    }
+
+    const dbStatus = await ensureDatabaseReady();
+    if (!dbStatus.dbReady) {
+      return Response.json(
+        { error: dbStatus.message || "Database is not ready" },
+        { status: 503 }
+      );
     }
 
     const supabase = createServiceClient();

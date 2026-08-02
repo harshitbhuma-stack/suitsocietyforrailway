@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { ensureDatabaseReady } from "@/lib/init-db";
 
 export async function GET() {
   try {
+    await ensureDatabaseReady();
+
     const supabase = createServiceClient();
     const { error } = await supabase.from("admin_users").select("id").limit(1);
 

@@ -232,3 +232,68 @@ export async function initializeDatabase(dbPassword?: string): Promise<{ success
 
   return { success: false, error: lastError };
 }
+
+let autoInitPromise: Promise<{ dbReady: boolean; message?: string }> | null = null;
+
+export async function ensureDatabaseReady(): Promise<{ dbReady: boolean; message?: string }> {
+  if (autoInitPromise) return autoInitPromise;
+
+  autoInitPromise = (async () => {
+    const { createServiceClient } = await import("@/lib/supabase/server");
+    const supabase = createServiceClient();
+
+    const { error } = await supabase.from("admin_users").select("id").limit(1);
+    if (!error) return { dbReady: true };
+
+    const needsSchema =
+      error.message.includes("admin_users") ||
+      error.message.includes("schema cache") ||
+      error.message.includes("does not exist");
+
+    if (!needsSchema) {
+      return { dbReady: false, message: error.message };
+    }
+
+    const password = process.env.SUPABASE_DB_PASSWORD;
+    if (!password) {
+      return {
+        dbReady: false,
+        message: "Set SUPABASE_DB_PASSWORD in .env.local to auto-initialize the database.",
+      };
+    }
+
+    const result = await initializeDatabase(password);
+    if (!result.success) {
+      return { dbReady: false, message: result.error };
+    }
+
+    await runMigrations(password).catch(() => undefined);
+
+    try {
+      const { initializeDefaultAdmin } = await import("@/lib/auth");
+      await initializeDefaultAdmin();
+    } catch {
+      // non-fatal
+    }
+
+    try {
+      const { ensureStorageBuckets } = await import("@/lib/storage-setup");
+      await ensureStorageBuckets();
+    } catch {
+      // non-fatal
+    }
+
+    const { error: recheck } = await supabase.from("admin_users").select("id").limit(1);
+    if (recheck) {
+      return { dbReady: false, message: recheck.message };
+    }
+
+    return { dbReady: true };
+  })();
+
+  try {
+    return await autoInitPromise;
+  } finally {
+    autoInitPromise = null;
+  }
+}

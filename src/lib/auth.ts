@@ -50,6 +50,15 @@ export async function initializeDefaultAdmin(): Promise<void> {
 }
 
 export async function adminLogin(username: string, password: string): Promise<{ success: boolean; error?: string }> {
+  const { ensureDatabaseReady } = await import("@/lib/init-db");
+  const dbStatus = await ensureDatabaseReady();
+  if (!dbStatus.dbReady) {
+    return {
+      success: false,
+      error: dbStatus.message || "Database is not ready. Check SUPABASE_DB_PASSWORD in .env.local.",
+    };
+  }
+
   await initializeDefaultAdmin();
 
   const supabase = createServiceClient();
