@@ -18,21 +18,45 @@ function buildConnectionUrls(password: string): string[] {
   }
 
   const encoded = encodeURIComponent(password);
-  const regions = ["ap-south-1", "ap-southeast-1", "us-east-1", "eu-west-1", "eu-central-1"];
+  const regions = [
+    "ap-northeast-1",
+    "ap-south-1",
+    "ap-southeast-1",
+    "us-east-1",
+    "us-west-1",
+    "eu-west-1",
+    "eu-central-1",
+  ];
   const prefixes = ["aws-0", "aws-1"];
   const urls: string[] = [];
 
-  // Direct connection first — fastest when it works
+  // Direct connection — works when password is correct
   urls.push(`postgresql://postgres:${encoded}@db.${ref}.supabase.co:5432/postgres`);
 
   for (const prefix of prefixes) {
     for (const region of regions) {
-      urls.push(`postgresql://postgres.${ref}:${encoded}@${prefix}-${region}.pooler.supabase.com:5432/postgres`);
       urls.push(`postgresql://postgres.${ref}:${encoded}@${prefix}-${region}.pooler.supabase.com:6543/postgres`);
+      urls.push(`postgresql://postgres.${ref}:${encoded}@${prefix}-${region}.pooler.supabase.com:5432/postgres`);
     }
   }
 
   return [...new Set(urls)];
+}
+
+function classifyConnectionError(message: string): "auth" | "routing" | "other" {
+  const lower = message.toLowerCase();
+  if (lower.includes("password authentication failed") || lower.includes("authentication failed")) {
+    return "auth";
+  }
+  if (
+    lower.includes("enotfound") ||
+    lower.includes("tenant/user") ||
+    lower.includes("connect_timeout") ||
+    lower.includes("econnrefused")
+  ) {
+    return "routing";
+  }
+  return "other";
 }
 
 function isIgnorableSqlError(message: string): boolean {
@@ -144,11 +168,23 @@ async function runWithPassword(
   }
 
   let lastError = "Could not connect to database. Check your Supabase database password.";
+  let authError: string | undefined;
 
   for (const connectionString of urls) {
     const result = await run(connectionString);
     if (result.ok) return { success: true };
-    lastError = result.error || lastError;
+    const message = result.error || lastError;
+    const kind = classifyConnectionError(message);
+    if (kind === "auth") authError = message;
+    else if (kind !== "routing") lastError = message;
+  }
+
+  if (authError) {
+    return {
+      success: false,
+      error:
+        "Wrong Supabase database password. Update SUPABASE_DB_PASSWORD in .env.local with the password from Supabase Dashboard → Settings → Database → Database password, then restart the dev server.",
+    };
   }
 
   return { success: false, error: lastError };
@@ -198,6 +234,7 @@ export async function initializeDatabase(dbPassword?: string): Promise<{ success
   const schema = readFileSync(schemaPath, "utf8");
 
   let lastError = "Could not connect to database. Check your Supabase database password.";
+  let authError: string | undefined;
 
   for (const connectionString of urls) {
     if (bootstrap) {
@@ -214,7 +251,9 @@ export async function initializeDatabase(dbPassword?: string): Promise<{ success
         }
         return { success: true, error: "Bootstrap OK. Some full-schema steps may need manual SQL Editor run." };
       }
-      lastError = boot.error || lastError;
+      const bootKind = classifyConnectionError(boot.error || "");
+      if (bootKind === "auth") authError = boot.error;
+      else if (bootKind !== "routing") lastError = boot.error || lastError;
       continue;
     }
 
@@ -227,7 +266,17 @@ export async function initializeDatabase(dbPassword?: string): Promise<{ success
         error: migrations.error || "Schema OK. Some migrations may need manual SQL Editor run.",
       };
     }
-    lastError = result.error || lastError;
+    const kind = classifyConnectionError(result.error || "");
+    if (kind === "auth") authError = result.error;
+    else if (kind !== "routing") lastError = result.error || lastError;
+  }
+
+  if (authError) {
+    return {
+      success: false,
+      error:
+        "Wrong Supabase database password. Update SUPABASE_DB_PASSWORD in .env.local with the password from Supabase Dashboard → Settings → Database → Database password, then restart the dev server.",
+    };
   }
 
   return { success: false, error: lastError };
