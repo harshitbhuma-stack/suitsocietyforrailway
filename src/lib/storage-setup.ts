@@ -19,17 +19,23 @@ export async function ensureStorageBucket(bucketName: string): Promise<void> {
 
   const { data: existing } = await supabase.storage.getBucket(bucket.name);
   if (existing) {
-    await supabase.storage.updateBucket(bucket.name, {
+    const { error: updateError } = await supabase.storage.updateBucket(bucket.name, {
       public: bucket.public,
       fileSizeLimit: bucket.fileSizeLimit,
     });
+    if (updateError && !/not found/i.test(updateError.message)) {
+      throw new Error(`Failed to update storage bucket "${bucket.name}": ${updateError.message}`);
+    }
     return;
   }
 
-  await supabase.storage.createBucket(bucket.name, {
+  const { error: createError } = await supabase.storage.createBucket(bucket.name, {
     public: bucket.public,
     fileSizeLimit: bucket.fileSizeLimit,
   });
+  if (createError && !/already exists/i.test(createError.message)) {
+    throw new Error(`Failed to create storage bucket "${bucket.name}": ${createError.message}`);
+  }
 }
 
 export async function ensureStorageBuckets(): Promise<void> {

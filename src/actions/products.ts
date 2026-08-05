@@ -6,6 +6,7 @@ import { slugify, getEffectivePrice, isDateInRange, calculateDiscountPercentage 
 import { resolveProductBarcode } from "@/lib/barcode";
 import { parseFilterList, PRICE_RANGES, mergeUniqueColors, FILTER_COLORS, sortSizes } from "@/lib/product-utils";
 import { parseSizeStock, syncProductTotalStock, buildSizeStockFromForm } from "@/lib/inventory";
+import { ensureStorageBucket } from "@/lib/storage-setup";
 import { revalidatePath } from "next/cache";
 
 function formatDbSchemaError(message: string): string {
@@ -297,16 +298,28 @@ export async function searchProducts(query: string): Promise<Product[]> {
 }
 
 async function saveProductImage(productId: string, file: File, options?: { isPrimary?: boolean; sortOrder?: number }) {
-  const supabase = await createServiceClient();
+  const supabase = createServiceClient();
   const ext = file.name.split(".").pop() || "jpg";
   const path = `${productId}/${Date.now()}.${ext}`;
   const buffer = Buffer.from(await file.arrayBuffer());
+
+  try {
+    await ensureStorageBucket("products");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Storage bucket setup failed";
+    return { error: message };
+  }
 
   const { error: uploadError } = await supabase.storage
     .from("products")
     .upload(path, buffer, { contentType: file.type, upsert: false });
 
-  if (uploadError) return { error: uploadError.message };
+  if (uploadError) {
+    const message = /bucket not found/i.test(uploadError.message)
+      ? 'Storage bucket "products" is missing. Check Supabase Storage or re-run Admin → Settings → Database setup.'
+      : uploadError.message;
+    return { error: message };
+  }
 
   const { data: urlData } = supabase.storage.from("products").getPublicUrl(path);
 
@@ -493,17 +506,31 @@ export async function createProduct(formData: FormData) {
 
   if (error) return { error: formatDbSchemaError(error.message) };
 
+  const rollbackProduct = async () => {
+    await supabase.from("product_images").delete().eq("product_id", data.id);
+    await supabase.from("products").delete().eq("id", data.id);
+  };
+
   const imageFile = formData.get("image") as File | null;
   if (imageFile && imageFile.size > 0) {
     const imageResult = await saveProductImage(data.id, imageFile, { isPrimary: true, sortOrder: 0 });
-    if (imageResult.error) return { error: imageResult.error };
+    if (imageResult.error) {
+      await rollbackProduct();
+      return { error: imageResult.error };
+    }
   }
 
   const imagesResult = await syncProductImages(data.id, formData);
-  if (imagesResult.error) return { error: imagesResult.error };
+  if (imagesResult.error) {
+    await rollbackProduct();
+    return { error: imagesResult.error };
+  }
 
   const videoResult = await syncProductVideos(data.id, formData);
-  if (videoResult.error) return { error: videoResult.error };
+  if (videoResult.error) {
+    await rollbackProduct();
+    return { error: videoResult.error };
+  }
 
   if (payload.stock > 0) {
     await supabase.from("inventory").insert({

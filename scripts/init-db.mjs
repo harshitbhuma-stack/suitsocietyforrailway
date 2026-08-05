@@ -158,10 +158,11 @@ async function main() {
   const bucketLimits = {
     products: 52428800,
     banners: 52428800,
+    images: 52428800,
     videos: MAX_VIDEO_SIZE_BYTES,
   };
 
-  for (const bucket of ["products", "banners", "videos"]) {
+  for (const bucket of ["products", "banners", "images", "videos"]) {
     const { data } = await supabase.storage.getBucket(bucket);
     if (!data) {
       await supabase.storage.createBucket(bucket, { public: true, fileSizeLimit: bucketLimits[bucket] });

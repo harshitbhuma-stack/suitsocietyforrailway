@@ -328,8 +328,8 @@ export async function ensureDatabaseReady(): Promise<{ dbReady: boolean; message
     try {
       const { ensureStorageBuckets } = await import("@/lib/storage-setup");
       await ensureStorageBuckets();
-    } catch {
-      // non-fatal
+    } catch (storageError) {
+      console.error("Storage bucket setup failed:", storageError);
     }
 
     const { error: recheck } = await supabase.from("admin_users").select("id").limit(1);

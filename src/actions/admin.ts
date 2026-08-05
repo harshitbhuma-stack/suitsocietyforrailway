@@ -1,6 +1,7 @@
 "use server";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { ensureStorageBucket } from "@/lib/storage-setup";
 import { slugify } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
@@ -207,7 +208,13 @@ export async function subscribeNewsletter(email: string) {
 }
 
 export async function uploadImage(file: File, bucket: string, path: string) {
-  const supabase = await createServiceClient();
+  const supabase = createServiceClient();
+  try {
+    await ensureStorageBucket(bucket);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Storage bucket setup failed";
+    return { error: message };
+  }
   const buffer = Buffer.from(await file.arrayBuffer());
   const { data, error } = await supabase.storage.from(bucket).upload(path, buffer, {
     contentType: file.type,
